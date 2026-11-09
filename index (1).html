@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>작은 메모장</title>
+  <!-- 화면 꾸미기: CSS -->
+  <style>
+    :root { color-scheme: light; font-family: system-ui, -apple-system, sans-serif; color: #25332e; background: #f4f5ef; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 52px 20px; }
+    main { max-width: 760px; margin: auto; }
+    .eyebrow { color: #557060; font-size: 12px; font-weight: 700; letter-spacing: .16em; }
+    h1 { font-size: clamp(32px, 6vw, 44px); letter-spacing: -.05em; margin: 12px 0; }
+    .intro { color: #637168; line-height: 1.7; margin-bottom: 28px; }
+    form { padding: 24px; background: white; border: 1px solid #dce2d8; border-radius: 20px; box-shadow: 0 8px 30px #25332e06; }
+    label { display: block; font-weight: 700; margin-bottom: 12px; }
+    textarea { width: 100%; min-height: 150px; resize: vertical; padding: 15px; border: 1px solid #ced8ce; border-radius: 12px; font: inherit; line-height: 1.7; background: #fcfdf9; color: inherit; }
+    :focus-visible { outline: 3px solid #82b89d; outline-offset: 3px; }
+    .form-bottom { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 14px; }
+    .hint { font-size: 12px; color: #67766d; }
+    button { font: inherit; cursor: pointer; border-radius: 10px; padding: 11px 18px; border: 0; font-weight: 650; }
+    .add { background: #285e47; color: white; white-space: nowrap; }
+    .add:hover { background: #1c4935; }
+    .notice { font-size: 13px; color: #667369; line-height: 1.6; margin: 16px 4px 32px; }
+    .list-heading { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; }
+    h2 { font-size: 20px; margin: 0; }
+    #count { font-size: 13px; color: #42674e; background: #e4ecdf; padding: 4px 9px; border-radius: 20px; }
+    ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+    li { background: white; padding: 22px; border: 1px solid #dce2d8; border-radius: 16px; }
+    .note-text { margin: 0 0 20px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.75; }
+    .note-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    time { color: #6c796f; font-size: 12px; }
+    .delete { color: #9b4038; background: #fcf0ed; padding: 8px 13px; font-size: 13px; }
+    .delete:hover { background: #f9ded8; }
+    #empty { text-align: center; padding: 44px 20px; border: 1px dashed #cbd5c6; border-radius: 16px; color: #68776a; line-height: 1.8; }
+    #status { min-height: 24px; color: #285e47; font-size: 13px; margin-top: 14px; }
+    button:disabled { opacity: .55; cursor: wait; }
+    .list-heading { flex-wrap: wrap; }
+    [hidden] { display: none !important; }
+    @media (max-width: 480px) { body { padding: 30px 16px; } form { padding: 18px; } .form-bottom { align-items: flex-start; } .hint { max-width: 140px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <span class="eyebrow">MY LITTLE NOTEBOOK</span>
+      <h1>작은 메모장</h1>
+      <p class="intro">문득 떠오른 생각, 잊고 싶지 않은 일을 남겨 보세요.</p>
+    </header>
+    <!-- HTML: 메모 입력 영역과 목록 -->
+    <form id="note-form">
+      <label for="note-input">어떤 생각을 담아 볼까요?</label>
+      <textarea id="note-input" placeholder="여기에 메모를 입력하세요." maxlength="5000" required disabled aria-describedby="input-hint"></textarea>
+      <div class="form-bottom">
+        <span class="hint" id="input-hint">최대 5,000자 · 줄바꿈도 그대로 담아요.</span>
+        <button class="add" type="submit" disabled>+ 메모 추가</button>
+      </div>
+    </form>
+    <p class="notice">Firestore에 저장합니다. 같은 브라우저·같은 주소에서 다시 열면 메모를 불러옵니다. 브라우저 데이터를 지우거나 다른 기기를 쓰면 기존 익명 계정의 메모에 접근할 수 없습니다.</p>
+    <section aria-labelledby="list-title">
+      <div class="list-heading"><h2 id="list-title">내 메모</h2><span id="count">—</span><button id="reload" type="button" disabled style="margin-left:auto;font-size:13px">다시 불러오기</button></div>
+      <p id="empty" hidden>아직 담긴 메모가 없어요.<br>첫 번째 생각을 남겨 보세요.</p>
+      <ul id="note-list" aria-label="메모 목록"></ul>
+    </section>
+    <p id="status" role="status" aria-live="polite">연결을 준비하고 있어요…</p>
+  </main>
+  <script type="module">
+    // Firebase 설정: 전달해 주신 프로젝트의 웹 앱 구성입니다.
+    const firebaseConfig = {
+      apiKey: "AIzaSyBzjwNkSgaRr4g5rNqAKcWYWV4uRuOcwHs",
+      authDomain: "test-3f669.firebaseapp.com",
+      projectId: "test-3f669",
+      storageBucket: "test-3f669.firebasestorage.app",
+      messagingSenderId: "88912801756",
+      appId: "1:88912801756:web:2db4c1f66da5f3d68d6919",
+      measurementId: "G-YV5WPEKY6E"
+    };
+
+    const form = document.querySelector("#note-form");
+    const input = document.querySelector("#note-input");
+    const addButton = form.querySelector("button");
+    const reloadButton = document.querySelector("#reload");
+    const list = document.querySelector("#note-list");
+    const empty = document.querySelector("#empty");
+    const count = document.querySelector("#count");
+    const status = document.querySelector("#status");
+    const dateFormat = new Intl.DateTimeFormat("ko-KR", {
+      year: "numeric", month: "long", day: "numeric",
+      hour: "2-digit", minute: "2-digit"
+    });
+
+    let sdk, notesCollection;
+    let notes = [];
+    let ready = false;
+    let busy = false;
+
+    function message(text, error = false) {
+      status.textContent = text;
+      status.style.color = error ? "#a13030" : "#285e47";
+    }
+
+    function lock(value) {
+      busy = value;
+      input.disabled = !ready || busy;
+      addButton.disabled = !ready || busy;
+      reloadButton.disabled = !ready || busy;
+      list.querySelectorAll("button").forEach(button => {
+        button.disabled = !ready || busy;
+      });
+    }
+
+    function showError(error) {
+      console.error(error);
+      const code = error.code || "";
+      let text = "처리하지 못했어요. 인터넷 연결과 Firebase 설정을 확인해 주세요.";
+      if (code.includes("permission-denied")) {
+        text = "접근 권한이 없어요. Firestore 보안 규칙을 확인해 주세요.";
+      } else if (code.includes("operation-not-allowed") ||
+                 code.includes("admin-restricted-operation")) {
+        text = "Firebase Authentication에서 익명 로그인을 켜 주세요.";
+      } else if (code.includes("unauthorized-domain")) {
+        text = "Firebase Authentication의 승인된 도메인을 확인해 주세요.";
+      } else if (code.includes("invalid-api-key")) {
+        text = "Firebase API 키가 올바른지 확인해 주세요.";
+      }
+      message(text + (code ? " (" + code + ")" : ""), true);
+    }
+
+    function render() {
+      list.replaceChildren();
+      count.textContent = notes.length + "개";
+      empty.hidden = notes.length > 0;
+      for (const note of notes) {
+        const item = document.createElement("li");
+        const text = document.createElement("p");
+        text.className = "note-text";
+        // 사용자 입력을 HTML로 실행하지 않습니다.
+        text.textContent = typeof note.text === "string" ? note.text : "";
+        const footer = document.createElement("div");
+        footer.className = "note-footer";
+        const time = document.createElement("time");
+        const date = note.createdAt?.toDate?.();
+        if (date) {
+          time.dateTime = date.toISOString();
+          time.textContent = dateFormat.format(date);
+        } else {
+          time.textContent = "날짜 정보 없음";
+        }
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "delete";
+        button.textContent = "삭제";
+        button.disabled = busy;
+        button.setAttribute("aria-label", text.textContent.slice(0, 25) + " 메모 삭제");
+        button.addEventListener("click", () => removeNote(note.id));
+        footer.append(time, button);
+        item.append(text, footer);
+        list.append(item);
+      }
+    }
+
+    // Firestore 서버에서 최신 메모를 가져옵니다.
+    async function loadNotes() {
+      const snapshot = await sdk.getDocsFromServer(
+        sdk.query(notesCollection, sdk.orderBy("createdAt", "desc"))
+      );
+      notes = snapshot.docs.map(document => ({
+        ...document.data(), id: document.id
+      }));
+      render();
+    }
+
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      if (!ready || busy) return;
+      const text = input.value.trim();
+      if (!text || text.length > 5000) {
+        message("1~5,000자의 메모를 입력해 주세요.", true);
+        input.focus();
+        return;
+      }
+      lock(true);
+      message("Firestore에 저장하고 있어요…");
+      let saved = false;
+      try {
+        await sdk.addDoc(notesCollection, {
+          text, createdAt: sdk.serverTimestamp()
+        });
+        saved = true;
+        input.value = "";
+        await loadNotes();
+        message("Firestore에 저장했어요.");
+      } catch (error) {
+        if (saved) {
+          console.error(error);
+          message("저장은 완료했지만 목록 갱신에 실패했어요. 다시 불러오기를 눌러 주세요.", true);
+        } else {
+          showError(error);
+        }
+      } finally {
+        lock(false);
+        input.focus();
+      }
+    });
+
+    async function removeNote(id) {
+      if (!ready || busy || !confirm("이 메모를 삭제할까요?")) return;
+      lock(true);
+      message("삭제하고 있어요…");
+      try {
+        await sdk.deleteDoc(sdk.doc(notesCollection, id));
+        notes = notes.filter(note => note.id !== id);
+        render();
+        message("메모를 삭제했어요.");
+      } catch (error) {
+        showError(error);
+      } finally {
+        lock(false);
+        input.focus();
+      }
+    }
+
+    reloadButton.addEventListener("click", async () => {
+      if (!ready || busy) return;
+      lock(true);
+      message("메모를 불러오고 있어요…");
+      try {
+        await loadNotes();
+        message("메모를 불러왔어요.");
+      } catch (error) {
+        showError(error);
+      } finally {
+        lock(false);
+      }
+    });
+
+    async function start() {
+      lock(true);
+      try {
+        if (location.protocol === "file:") {
+          message("이 파일은 Live Server 또는 웹 호스팅 주소로 열어 주세요.", true);
+          return;
+        }
+        message("Firebase에 연결하고 있어요…");
+        // npm 없이 CDN에서 ES 모듈을 불러옵니다.
+        // 동적 import로 CDN 연결 실패도 화면에 안내합니다.
+        const [appSdk, authSdk, firestoreSdk] = await Promise.all([
+          import("https://www.gstatic.com/firebasejs/13.2.0/firebase-app.js"),
+          import("https://www.gstatic.com/firebasejs/13.2.0/firebase-auth.js"),
+          import("https://www.gstatic.com/firebasejs/13.2.0/firebase-firestore.js")
+        ]);
+        sdk = firestoreSdk;
+        const app = appSdk.initializeApp(firebaseConfig);
+        const auth = authSdk.getAuth(app);
+        await authSdk.setPersistence(auth, authSdk.browserLocalPersistence);
+        await auth.authStateReady();
+        const user = auth.currentUser ||
+          (await authSdk.signInAnonymously(auth)).user;
+        const db = sdk.getFirestore(app);
+        // 사용자별 경로: users/{uid}/notes/{메모 ID}
+        notesCollection = sdk.collection(db, "users", user.uid, "notes");
+        ready = true;
+        await loadNotes();
+        message("연결됐어요. 메모를 남겨 보세요.");
+      } catch (error) {
+        showError(error);
+      } finally {
+        lock(false);
+      }
+    }
+
+    start();
+  </script>
+</body>
+</html>
